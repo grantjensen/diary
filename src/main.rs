@@ -1,5 +1,6 @@
 use chrono;
 use std::env;
+use std::process::Command;
 
 fn main() {
     // First task: when the user calls "diary", I want neovim to open the diary entry of the
@@ -14,6 +15,8 @@ fn main() {
     // days, years etc.
     //
     // Start with being able to edit journal entry
+    //
+    // Update, probably need a scripting language to open neovim for me. We'll see
     let args: Vec<String> = env::args().collect();
     if args.len() != 1 {
         println!("Right now we don't accept any args");
@@ -24,5 +27,8 @@ fn main() {
     path_buf.push(chrono::offset::Local::now().date_naive().to_string());
     path_buf.set_extension("txt");
     let path = path_buf.into_os_string().into_string().unwrap();
-    println!("Full path: {}", path);
+    Command::new("nvim")
+        .arg(path)
+        .output()
+        .expect("Failed to execute process");
 }
