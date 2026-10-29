@@ -8,9 +8,20 @@ from datetime import date, timedelta
 from pathlib import Path
 
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def default_data_dir() -> Path:
+    """`data/` inside the source checkout (gitignored) when running from one, else ~/diary."""
+    if (REPO_ROOT / "pyproject.toml").exists():
+        return REPO_ROOT / "data"
+    return Path("~/diary").expanduser()
+
+
 def data_dir() -> Path:
     """Root of the diary data. Override with $DIARY_DIR."""
-    root = Path(os.environ.get("DIARY_DIR", "~/diary")).expanduser()
+    env = os.environ.get("DIARY_DIR")
+    root = Path(env).expanduser() if env else default_data_dir()
     (root / "logs").mkdir(parents=True, exist_ok=True)
     return root
 

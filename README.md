@@ -22,10 +22,10 @@ Then tab completes commands, project names after `-p`, and todo ids (with their 
 
 ## Data
 
-Stored in `~/diary` (override with `$DIARY_DIR`). It's safe to hand-edit and works well as its own git repo.
+Stored in `data/` inside this repo, which is gitignored so your logs are never pushed (override with `$DIARY_DIR`; a non-editable install falls back to `~/diary`). It's safe to hand-edit. `diary path` prints the location.
 
 ```
-~/diary/
+data/
   todos.md               # the running todo list
   logs/2026-10-29.md     # one file per day
 ```
