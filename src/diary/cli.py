@@ -11,6 +11,7 @@ import sys
 from datetime import date
 
 from . import ask as ask_mod
+from . import completion
 from . import logs, projects, store
 from .todos import Todo, TodoList
 
@@ -38,13 +39,15 @@ def priority_arg(text: str) -> int:
     return int(value)
 
 
-def format_todo(t: Todo, today: date) -> str:
+def format_todo(t: Todo, today: date, under: str | None = None) -> str:
+    """One display line; `under` is the project heading it's listed beneath, so its tag is omitted."""
     box = "[x]" if t.is_done else "[ ]"
     bits = [f"{box} #{t.id:<3}"]
     bits.append(f"p{t.priority}" if t.priority else "  ")
     bits.append(t.text)
-    if t.project or t.extra_projects:
-        bits.append(" ".join(f"+{p}" for p in filter(None, [t.project, *t.extra_projects])))
+    tags = [p for p in (t.project, *t.extra_projects) if p and p != under]
+    if tags:
+        bits.append(" ".join(f"+{p}" for p in tags))
     if t.due and not t.is_done:
         flag = " OVERDUE" if t.due < today else " TODAY" if t.due == today else ""
         bits.append(f"(due {t.due.isoformat()}{flag})")
@@ -55,7 +58,14 @@ def format_todo(t: Todo, today: date) -> str:
 
 # --- todo ---------------------------------------------------------------
 
+def warn_if_new_project(name: str | None) -> None:
+    warning = projects.new_project_warning(name)
+    if warning:
+        print(warning, file=sys.stderr)
+
+
 def cmd_todo_add(args) -> None:
+    warn_if_new_project(args.project)
     tl = TodoList()
     t = tl.add(" ".join(args.text), project=args.project, priority=args.priority, due=args.due)
     tl.save()
@@ -71,7 +81,7 @@ def cmd_todo_ls(args) -> None:
         return
     if args.project:
         for t in items:
-            print(format_todo(t, today))
+            print(format_todo(t, today, under=args.project.lower()))
         return
     # Global view: grouped by project, untagged last.
     groups: dict[str, list[Todo]] = {}
@@ -80,7 +90,7 @@ def cmd_todo_ls(args) -> None:
     for name in sorted(groups, key=lambda n: (n == "", n)):
         print(f"{'+' + name if name else '(no project)'}")
         for t in groups[name]:
-            print("  " + format_todo(t, today))
+            print("  " + format_todo(t, today, under=name))
 
 
 def cmd_todo_done(args) -> None:
@@ -116,6 +126,8 @@ def cmd_todo_edit(args) -> None:
     if args.text:
         t.text = " ".join(args.text)
     if args.project is not None:
+        if args.project not in {"", "-", "none"}:
+            warn_if_new_project(args.project)
         t.project = None if args.project in {"", "-", "none"} else args.project.lower()
     if args.priority is not None:
         t.priority = None if args.priority == 0 else args.priority
@@ -144,6 +156,7 @@ def cmd_todo_open(args) -> None:
 # --- log ----------------------------------------------------------------
 
 def cmd_log(args) -> None:
+    warn_if_new_project(args.project)
     log = logs.DayLog(args.date)
     if args.message:
         log.append(" ".join(args.message), project=args.project)
@@ -220,7 +233,7 @@ def _print_project(p: projects.ProjectHistory) -> None:
         print("\nopen todos")
         today = date.today()
         for t in open_items:
-            print("  " + format_todo(t, today))
+            print("  " + format_todo(t, today, under=p.name))
 
 
 # --- ask ----------------------------------------------------------------
@@ -306,6 +319,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--model", help=f"override model (default: $DIARY_MODEL or {ask_mod.DEFAULT_MODEL})")
     p.set_defaults(func=cmd_ask)
 
+    p = sub.add_parser("completion", help="print a shell completion script (eval it in ~/.zshrc)")
+    p.add_argument("shell", choices=["zsh"])
+    p.set_defaults(func=lambda args: print(completion.ZSH.strip()))
+
     p = sub.add_parser("path", help="print the data directory")
     p.set_defaults(func=lambda args: print(store.data_dir()))
 
@@ -313,6 +330,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> None:
+    argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == ["_complete"]:  # hidden helper used by the completion script
+        print("\n".join(completion.complete(argv[1] if len(argv) > 1 else "")))
+        return
     args = build_parser().parse_args(argv)
     args.func(args)
 

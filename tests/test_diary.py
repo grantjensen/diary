@@ -4,7 +4,7 @@ import unittest
 from datetime import date, datetime
 from pathlib import Path
 
-from diary import ask, logs, projects, store
+from diary import ask, completion, logs, projects, store
 from diary.todos import Todo, TodoList
 
 
@@ -105,6 +105,26 @@ class ProjectsAndAskTests(DiaryTestCase):
         self.assertNotIn('<log date="2026-10-01">', prompt)
         self.assertNotIn("more", prompt)
         self.assertIn("<todos>", prompt)
+
+
+class CompletionTests(DiaryTestCase):
+    def test_complete_projects_and_todos(self):
+        logs.DayLog(date(2026, 10, 1)).append("start", project="api")
+        tl = TodoList()
+        tl.add("open one", project="web")
+        tl.add("finished: yes").done = date(2026, 10, 2)
+        tl.save()
+        self.assertEqual(completion.complete("projects"), ["api", "web"])
+        self.assertEqual(completion.complete("todos-open"), ["1:open one +web"])
+        self.assertEqual(completion.complete("todos-done"), ["2:finished: yes"])
+        self.assertEqual(len(completion.complete("todos-all")), 2)
+
+    def test_new_project_warning(self):
+        logs.DayLog(date(2026, 10, 1)).append("start", project="api")
+        self.assertIsNone(projects.new_project_warning("API"))
+        self.assertIsNone(projects.new_project_warning(None))
+        self.assertIn("did you mean +api", projects.new_project_warning("apo"))
+        self.assertEqual(projects.new_project_warning("zzz"), "note: new project +zzz")
 
 
 class DateTests(unittest.TestCase):

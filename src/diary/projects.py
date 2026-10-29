@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import difflib
 from dataclasses import dataclass, field
 from datetime import date
 
@@ -43,3 +44,20 @@ def collect(since: date | None = None, until: date | None = None,
             else:
                 get(name).open_todos += 1
     return projects
+
+
+def known_names() -> list[str]:
+    return sorted(collect())
+
+
+def new_project_warning(name: str | None) -> str | None:
+    """A hint to print when `name` isn't an existing project, e.g. to catch typos."""
+    if not name:
+        return None
+    known = known_names()
+    name = name.lower()
+    if name in known:
+        return None
+    close = difflib.get_close_matches(name, known, n=3, cutoff=0.6)
+    hint = f" (did you mean {', '.join('+' + c for c in close)}?)" if close else ""
+    return f"note: new project +{name}{hint}"

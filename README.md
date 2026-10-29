@@ -10,6 +10,16 @@ pipx install -e .        # or: uv tool install -e .
 
 Requires Python 3.10+. `diary ask` also needs the [Claude Code](https://claude.com/claude-code) `claude` CLI, logged in.
 
+## Tab completion (zsh)
+
+Add this to `~/.zshrc`, after `compinit` (oh-my-zsh runs compinit for you):
+
+```sh
+eval "$(diary completion zsh)"
+```
+
+Then tab completes commands, project names after `-p`, and todo ids (with their text) after `todo done`, `edit`, `undo` and `rm`. Using a project name that doesn't exist yet prints a warning such as `note: new project +apo (did you mean +api?)`.
+
 ## Data
 
 Stored in `~/diary` (override with `$DIARY_DIR`). It's safe to hand-edit and works well as its own git repo.
