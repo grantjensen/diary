@@ -114,6 +114,16 @@ class DayLog:
         sections.insert(0, (OPEN_TODOS, body))
         self.path.write_text(join_sections(preamble, sections))
 
+    def ensure_sections(self, names: list[str]) -> None:
+        """Add an empty `## name` heading for each project the day doesn't have yet (empty ones aren't counted)."""
+        self.ensure()
+        preamble, sections = split_sections(self.read())
+        have = {h.lower() for h, _ in sections}
+        missing = [n.lower() for n in names if n.lower() not in have]
+        if missing:
+            sections += [(n, ["", ""]) for n in missing]
+            self.path.write_text(join_sections(preamble, sections) + "\n")
+
     def project_sections(self) -> dict[str, str]:
         """Project name -> section text, for sections that have real content."""
         _, sections = split_sections(self.read())

@@ -60,10 +60,17 @@ Each `## <project>` heading in a day's file means you worked on that project tha
 ## Projects
 
 ```sh
-diary projects             # each project: days worked, first/last date, open/done todos
+diary projects             # each project: status, days worked, first/last date, open/done todos
 diary projects api         # every day's entries for api, plus its open todos
 diary projects --since 3m
+diary projects add web     # create a project before using it
+diary projects close api   # finished: no more auto headings, hidden from -p completion
+diary projects reopen api
 ```
+
+A project also gets created the first time you use it with `-p`. Every project is open until you close it, and its history stays after closing. Open/closed status is kept in `data/projects.md`, which you can hand-edit; deleting a line there removes a project that has no logs or todos (such as a typo).
+
+When `diary log` opens a day in your editor, it adds an empty `## <project>` heading for every open project, so you can start writing straight away. Headings left empty don't count as working on that project.
 
 ## Ask
 

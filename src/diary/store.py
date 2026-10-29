@@ -30,6 +30,10 @@ def todos_path() -> Path:
     return data_dir() / "todos.md"
 
 
+def projects_path() -> Path:
+    return data_dir() / "projects.md"
+
+
 def log_path(day: date) -> Path:
     return data_dir() / "logs" / f"{day.isoformat()}.md"
 

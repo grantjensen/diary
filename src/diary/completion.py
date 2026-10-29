@@ -9,9 +9,16 @@ ZSH = r"""
 # zsh completion for diary. Load with:  eval "$(diary completion zsh)"  (after compinit)
 
 _diary_projects() {
-  local -a items
-  items=(${(f)"$(diary _complete projects 2>/dev/null)"})
+  local -a items  # optional last arg: all | closed (default: open projects)
+  local kind=projects
+  [[ ${@[-1]} == (all|closed) ]] && kind=projects-${@[-1]}
+  items=(${(f)"$(diary _complete $kind 2>/dev/null)"})
   _describe -t projects 'project' items
+}
+
+_diary_project_actions() {
+  local -a acts=('add:create a project' 'close:mark a project closed' 'reopen:reopen a closed project')
+  _describe -t actions 'action' acts
 }
 
 _diary_todos() {
@@ -79,7 +86,15 @@ _diary() {
             '(-d --date)'{-d,--date}'[day]:date:(today yesterday)' \
             '*:message: ' ;;
         show) _arguments '--since[from date]:date: ' '1:date:(today yesterday)' ;;
-        projects|p) _arguments '--since[from date]:date: ' '1:project:_diary_projects' ;;
+        projects|p)
+          if (( CURRENT == 2 )); then
+            _alternative 'actions:action:_diary_project_actions' 'projects:project:_diary_projects all'
+          else
+            case $words[2] in
+              close)  _diary_projects ;;
+              reopen) _diary_projects closed ;;
+            esac
+          fi ;;
         ask)
           _arguments \
             '(-p --project)'{-p,--project}'[project]:project:_diary_projects' \
@@ -103,8 +118,9 @@ def _escape(text: str) -> str:
 
 def complete(kind: str) -> list[str]:
     """Lines in zsh `_describe` format ("value:description") for the given kind."""
-    if kind == "projects":
-        return [_escape(name) for name in projects.known_names()]
+    if kind in {"projects", "projects-all", "projects-closed"}:
+        status = {"projects": "open", "projects-all": "all", "projects-closed": "closed"}[kind]
+        return [_escape(name) for name in projects.known_names(status)]
     if kind in {"todos-open", "todos-done", "todos-all"}:
         which = kind.removeprefix("todos-")
         items = TodoList().query(include_open=which != "done", include_done=which != "open")

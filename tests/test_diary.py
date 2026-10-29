@@ -107,6 +107,42 @@ class ProjectsAndAskTests(DiaryTestCase):
         self.assertIn("<todos>", prompt)
 
 
+class ProjectStatusTests(DiaryTestCase):
+    def test_add_close_reopen(self):
+        logs.DayLog(date(2026, 10, 1)).append("start", project="api")
+        projects.set_status("web", None)  # added before any use
+        self.assertEqual(projects.known_names("open"), ["api", "web"])
+
+        projects.set_status("api", date(2026, 10, 30))
+        self.assertEqual(projects.known_names("open"), ["web"])
+        self.assertEqual(projects.known_names("closed"), ["api"])
+        self.assertEqual(projects.collect()["api"].closed, date(2026, 10, 30))
+        self.assertEqual(len(projects.collect()["api"].days), 1)  # history kept
+        self.assertIn("is closed", projects.new_project_warning("api"))
+
+        projects.set_status("api", None)
+        self.assertEqual(projects.known_names("open"), ["api", "web"])
+
+    def test_hand_edited_registry(self):
+        store.projects_path().write_text("## Open\n- api\n\n## Closed\n- old\n- older (closed 2026-01-02)\n")
+        reg = projects.Registry()
+        self.assertEqual(reg.entries, {"api": None, "old": date.min, "older": date(2026, 1, 2)})
+        reg.save()
+        self.assertEqual(projects.Registry().entries, reg.entries)
+
+    def test_log_gets_sections_for_open_projects_only(self):
+        projects.set_status("api", None)
+        projects.set_status("web", None)
+        projects.set_status("old", date(2026, 10, 1))
+        log = logs.DayLog(date(2026, 10, 29))
+        log.append("note", project="web")
+        log.ensure_sections(projects.known_names("open"))
+        log.ensure_sections(projects.known_names("open"))  # idempotent
+        text = log.read()
+        self.assertEqual((text.count("## api"), text.count("## web"), text.count("## old")), (1, 1, 0))
+        self.assertEqual(list(log.project_sections()), ["web"])  # empty api heading isn't counted
+
+
 class CompletionTests(DiaryTestCase):
     def test_complete_projects_and_todos(self):
         logs.DayLog(date(2026, 10, 1)).append("start", project="api")

@@ -165,16 +165,8 @@ def cmd_log(args) -> None:
     log.ensure()
     if args.date == date.today():
         log.refresh_open_todos(TodoList().query())
-    if args.project:
-        _ensure_section(log, args.project)
+    log.ensure_sections(projects.known_names("open") + ([args.project] if args.project else []))
     open_in_editor(log.path)
-
-
-def _ensure_section(log: logs.DayLog, project: str) -> None:
-    preamble, sections = logs.split_sections(log.read())
-    if not any(h.lower() == project.lower() for h, _ in sections):
-        sections.append((project.lower(), ["", ""]))
-        log.path.write_text(logs.join_sections(preamble, sections) + "\n")
 
 
 def cmd_show(args) -> None:
@@ -193,28 +185,68 @@ def cmd_show(args) -> None:
 
 # --- projects -----------------------------------------------------------
 
+PROJECT_ACTIONS = ("add", "close", "reopen")
+
+
 def cmd_projects(args) -> None:
+    if args.args and args.args[0] in PROJECT_ACTIONS:
+        if len(args.args) != 2:
+            sys.exit(f"usage: diary projects {args.args[0]} <name>")
+        _project_action(args.args[0], args.args[1].lower())
+        return
+    if len(args.args) > 1:
+        sys.exit("usage: diary projects [name | add|close|reopen <name>]")
     history = projects.collect(since=args.since)
-    if args.name:
-        p = history.get(args.name.lower())
+    if args.args:
+        p = history.get(args.args[0].lower())
         if not p:
-            sys.exit(f"no project named {args.name!r}")
+            sys.exit(f"no project named {args.args[0]!r}")
         _print_project(p)
         return
     if not history:
-        print("no projects yet: add `## <project>` sections to a log or `+project` to a todo")
+        print("no projects yet: `diary projects add <name>`, or use -p <name> on a todo or log")
         return
-    rows = sorted(history.values(), key=lambda p: (-(p.last or date.min).toordinal(), p.name))
-    headers = ("project", "days", "first", "last", "open", "done")
+    rows = sorted(history.values(), key=lambda p: (not p.is_open, -(p.last or date.min).toordinal(), p.name))
+    headers = ("project", "status", "days", "first", "last", "open", "done")
     table = [headers] + [
-        (p.name, str(len(p.days)), _d(p.first), _d(p.last), str(p.open_todos), str(p.done_todos))
+        (p.name, "open" if p.is_open else "closed", str(len(p.days)), _d(p.first), _d(p.last),
+         str(p.open_todos), str(p.done_todos))
         for p in rows
     ]
     widths = [max(len(r[i]) for r in table) for i in range(len(headers))]
     for i, r in enumerate(table):
-        print("  ".join(c.ljust(w) if j == 0 else c.rjust(w) for j, (c, w) in enumerate(zip(r, widths))))
+        print("  ".join(c.ljust(w) if j < 2 else c.rjust(w) for j, (c, w) in enumerate(zip(r, widths))))
         if i == 0:
             print("  ".join("-" * w for w in widths))
+
+
+def _project_action(action: str, name: str) -> None:
+    history = projects.collect()
+    p = history.get(name)
+    if action == "add":
+        if p:
+            sys.exit(f"+{name} already exists ({'open' if p.is_open else 'closed'})")
+        warning = projects.new_project_warning(name)
+        if warning and "did you mean" in warning:
+            print(warning, file=sys.stderr)
+        projects.set_status(name, None)
+        print(f"added +{name}")
+        return
+    if not p:
+        sys.exit(f"no project named {name!r}")
+    if action == "close":
+        if not p.is_open:
+            sys.exit(f"+{name} is already closed")
+        projects.set_status(name, date.today())
+        print(f"closed +{name}")
+        if p.open_todos:
+            print(f"note: +{name} still has {p.open_todos} open todo(s); see `diary todo ls -p {name}`",
+                  file=sys.stderr)
+    else:
+        if p.is_open:
+            sys.exit(f"+{name} is already open")
+        projects.set_status(name, None)
+        print(f"reopened +{name}")
 
 
 def _d(d: date | None) -> str:
@@ -222,7 +254,8 @@ def _d(d: date | None) -> str:
 
 
 def _print_project(p: projects.ProjectHistory) -> None:
-    print(f"+{p.name}: {len(p.days)} day(s) logged, {_d(p.first)} .. {_d(p.last)}; "
+    status = "" if p.is_open else f" [closed{' ' + _d(p.closed) if p.closed != date.min else ''}]"
+    print(f"+{p.name}{status}: {len(p.days)} day(s) logged, {_d(p.first)} .. {_d(p.last)}; "
           f"{p.open_todos} open / {p.done_todos} done todo(s)")
     for d in sorted(p.days):
         print(f"\n{d.isoformat()} ({d.strftime('%a')})")
@@ -307,8 +340,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--since", type=day_arg, help="show every day from this date (e.g. 7d)")
     p.set_defaults(func=cmd_show)
 
-    p = sub.add_parser("projects", aliases=["p"], help="summarise projects and the days you worked on them")
-    p.add_argument("name", nargs="?", help="show one project's full history")
+    p = sub.add_parser("projects", aliases=["p"], help="summarise projects, show one, or add/close/reopen one",
+                       usage="diary projects [--since DATE] [name | add|close|reopen <name>]")
+    p.add_argument("args", nargs="*", metavar="name",
+                   help="a project to show its full history, or add|close|reopen <name>")
     p.add_argument("--since", type=day_arg)
     p.set_defaults(func=cmd_projects)
 
