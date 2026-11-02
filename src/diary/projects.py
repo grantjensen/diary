@@ -50,7 +50,7 @@ class Registry:
         body = HEADER + "## Open\n\n" + "".join(f"- {n}\n" for n in open_names)
         body += "\n## Closed\n\n" + "".join(
             f"- {n}" + (f" (closed {c.isoformat()})" if c != date.min else "") + "\n" for n, c in closed)
-        self.path.write_text(body)
+        store.write_atomic(self.path, body)
 
     def closed(self, name: str) -> date | None:
         return self.entries.get(name.lower())

@@ -83,7 +83,7 @@ class DayLog:
 
     def ensure(self) -> None:
         if not self.exists:
-            self.path.write_text(template(self.day))
+            store.write_atomic(self.path, template(self.day))
 
     def append(self, text: str, project: str | None = None, when: datetime | None = None) -> None:
         """Append a timestamped bullet under the project's section (or Notes)."""
@@ -101,7 +101,7 @@ class DayLog:
                 break
         else:
             sections.append((heading, ["", f"- {stamp} {text}"]))
-        self.path.write_text(join_sections(preamble, sections))
+        store.write_atomic(self.path, join_sections(preamble, sections))
 
     def refresh_open_todos(self, todos: list[Todo]) -> None:
         """Rewrite the 'Open todos' reference section (kept at the top)."""
@@ -112,7 +112,7 @@ class DayLog:
         body += [f"- {_todo_summary(t)}" for t in todos] or ["- (none)"]
         body.append("")
         sections.insert(0, (OPEN_TODOS, body))
-        self.path.write_text(join_sections(preamble, sections))
+        store.write_atomic(self.path, join_sections(preamble, sections))
 
     def ensure_sections(self, names: list[str]) -> None:
         """Add an empty `## name` heading for each project the day doesn't have yet (empty ones aren't counted)."""
@@ -122,7 +122,7 @@ class DayLog:
         missing = [n.lower() for n in names if n.lower() not in have]
         if missing:
             sections += [(n, ["", ""]) for n in missing]
-            self.path.write_text(join_sections(preamble, sections) + "\n")
+            store.write_atomic(self.path, join_sections(preamble, sections) + "\n")
 
     def project_sections(self) -> dict[str, str]:
         """Project name -> section text, for sections that have real content."""

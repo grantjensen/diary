@@ -42,6 +42,13 @@ diary todo edit 3 --pri none -p web --due 2026-11-05 [new text]
 diary todo undo 3 | rm 3 | open
 ```
 
+Your shell treats characters like `>`, `|`, `&`, `#` and `*` specially, so `diary todo add fix a -> b` would write to a file named `b`. Quote the text, or leave it off and type it at a prompt instead:
+
+```sh
+diary todo add -p api          # prompts "todo: " — type anything, no quoting needed
+diary todo edit 3              # no text or flags: opens the current text in $EDITOR
+```
+
 In `todos.md`, each todo is one line with inline tokens: `+project`, `!p1`..`!p3`, and `due:YYYY-MM-DD`. Lines you add by hand get an id on the next save.
 
 ## Daily log

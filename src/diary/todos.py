@@ -95,6 +95,7 @@ class TodoList:
         for t in self.items:
             if t.id == 0 or t.id in seen:
                 t.id, next_id = next_id, next_id + 1
+                t.created = t.created or date.today()  # added by hand
             seen.add(t.id)
 
     def save(self) -> None:
@@ -102,7 +103,7 @@ class TodoList:
         done_items = sorted((t for t in self.items if t.is_done), key=lambda t: (t.done, t.id), reverse=True)
         body = HEADER + "## Open\n\n" + "".join(t.render() + "\n" for t in open_items)
         body += "\n## Done\n\n" + "".join(t.render() + "\n" for t in done_items)
-        self.path.write_text(body)
+        store.write_atomic(self.path, body)
 
     def get(self, todo_id: int) -> Todo:
         for t in self.items:

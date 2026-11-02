@@ -8,7 +8,9 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 from datetime import date
+from pathlib import Path
 
 from . import ask as ask_mod
 from . import completion
@@ -16,13 +18,17 @@ from . import logs, projects, store
 from .todos import Todo, TodoList
 
 
-def open_in_editor(path) -> None:
+def open_in_editor(path, insert_at_line: int | None = None) -> None:
+    """Open `path` in $VISUAL/$EDITOR. With `insert_at_line`, vim/nvim start in insert mode at the end of that line."""
     editor = os.environ.get("VISUAL") or os.environ.get("EDITOR")
     if not editor:
         editor = next((e for e in ("nvim", "vim", "vi", "nano") if shutil.which(e)), None)
     if not editor:
         sys.exit("no editor found; set $EDITOR")
-    subprocess.call([*shlex.split(editor), str(path)])
+    cmd = shlex.split(editor)
+    if insert_at_line and Path(cmd[0]).name in {"vim", "nvim", "vi", "mvim", "gvim"}:
+        cmd += [f"+{insert_at_line}", "+startinsert!"]
+    subprocess.call([*cmd, str(path)])
 
 
 def day_arg(text: str) -> date:
@@ -64,10 +70,41 @@ def warn_if_new_project(name: str | None) -> None:
         print(warning, file=sys.stderr)
 
 
+def prompt_text(label: str) -> str:
+    """Read free text interactively, so shell characters like > | & # need no quoting."""
+    try:
+        import readline  # noqa: F401  (line editing for input())
+    except ImportError:
+        pass
+    try:
+        text = input(f"{label}: ").strip()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        sys.exit("cancelled")
+    if not text:
+        sys.exit("nothing entered")
+    return text
+
+
+def edit_text_in_editor(text: str) -> str:
+    """Open `text` in $EDITOR and return the edited version (lines joined into one)."""
+    with tempfile.NamedTemporaryFile("w+", suffix=".txt", prefix="diary-todo-", delete=False) as f:
+        f.write(text + "\n")
+    try:
+        open_in_editor(f.name, insert_at_line=1)
+        edited = " ".join(Path(f.name).read_text().split())
+    finally:
+        os.unlink(f.name)
+    if not edited:
+        sys.exit("empty text; todo left unchanged")
+    return edited
+
+
 def cmd_todo_add(args) -> None:
     warn_if_new_project(args.project)
+    text = " ".join(args.text) if args.text else prompt_text("todo")
     tl = TodoList()
-    t = tl.add(" ".join(args.text), project=args.project, priority=args.priority, due=args.due)
+    t = tl.add(text, project=args.project, priority=args.priority, due=args.due)
     tl.save()
     print(f"added {format_todo(t, date.today())}")
 
@@ -121,10 +158,17 @@ def cmd_todo_undo(args) -> None:
 
 
 def cmd_todo_edit(args) -> None:
-    tl = TodoList()
-    t = tl.get(args.id)
+    no_flags = args.project is None and args.priority is None and not args.due and not args.clear_due
     if args.text:
-        t.text = " ".join(args.text)
+        new_text = " ".join(args.text)
+    elif no_flags:
+        new_text = edit_text_in_editor(TodoList().get(args.id).text)
+    else:
+        new_text = None
+    tl = TodoList()  # (re)load after the editor closes, so changes made meanwhile aren't lost
+    t = tl.get(args.id)
+    if new_text:
+        t.text = new_text
     if args.project is not None:
         if args.project not in {"", "-", "none"}:
             warn_if_new_project(args.project)
@@ -149,7 +193,9 @@ def cmd_todo_rm(args) -> None:
 def cmd_todo_open(args) -> None:
     tl = TodoList()
     tl.save()  # make sure the file exists and ids are assigned
-    open_in_editor(tl.path)
+    lines = tl.path.read_text().splitlines()
+    last_open = max((i for i, line in enumerate(lines, 1) if line.startswith("- [ ]")), default=None)
+    open_in_editor(tl.path, insert_at_line=last_open or len(lines))
     TodoList().save()  # normalise anything added by hand
 
 
@@ -290,7 +336,7 @@ def build_parser() -> argparse.ArgumentParser:
     tsub = todo.add_subparsers(dest="todo_command", required=True)
 
     p = tsub.add_parser("add", aliases=["a"], help="add a todo")
-    p.add_argument("text", nargs="+")
+    p.add_argument("text", nargs="*", help="omit to be prompted (no shell quoting needed)")
     p.add_argument("-p", "--project")
     p.add_argument("--pri", dest="priority", type=priority_arg, help="1 (high) .. 3 (low)")
     p.add_argument("--due", type=day_arg, help="YYYY-MM-DD, today, tomorrow")
@@ -313,7 +359,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = tsub.add_parser("edit", aliases=["e"], help="change a todo's text, project, priority or due date")
     p.add_argument("id", type=int)
-    p.add_argument("text", nargs="*", help="new text (optional)")
+    p.add_argument("text", nargs="*", help="new text; with no text or flags, opens the current text in $EDITOR")
     p.add_argument("-p", "--project", help="new project ('none' to clear)")
     p.add_argument("--pri", dest="priority", type=lambda s: 0 if s == "none" else priority_arg(s),
                    help="1..3, or 'none' to clear")

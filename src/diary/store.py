@@ -26,6 +26,13 @@ def data_dir() -> Path:
     return root
 
 
+def write_atomic(path: Path, text: str) -> None:
+    """Write via a temp file + rename, so a crash never leaves a truncated file."""
+    tmp = path.with_name(f".{path.name}.tmp")
+    tmp.write_text(text)
+    os.replace(tmp, path)
+
+
 def todos_path() -> Path:
     return data_dir() / "todos.md"
 
