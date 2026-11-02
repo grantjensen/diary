@@ -6,6 +6,7 @@ import argparse
 import os
 import shlex
 import shutil
+import statistics
 import subprocess
 import sys
 import tempfile
@@ -101,8 +102,14 @@ def edit_text_in_editor(text: str) -> str:
 
 
 def cmd_todo_add(args) -> None:
+    if args.text:
+        cmd = "diary todo add"
+        cmd += f" -p {args.project}" if args.project else ""
+        cmd += f" --pri {args.priority}" if args.priority else ""
+        cmd += f" --due {args.due.isoformat()}" if args.due else ""
+        sys.exit(f"todo text goes at the prompt, not the command line: run `{cmd}` and type it there")
     warn_if_new_project(args.project)
-    text = " ".join(args.text) if args.text else prompt_text("todo")
+    text = prompt_text("todo")
     tl = TodoList()
     t = tl.add(text, project=args.project, priority=args.priority, due=args.due)
     tl.save()
@@ -120,11 +127,14 @@ def cmd_todo_ls(args) -> None:
         for t in items:
             print(format_todo(t, today, under=args.project.lower()))
         return
-    # Global view: grouped by project, untagged last.
+    # Global view: grouped by project, most urgent (lowest median priority; none = 4) first, untagged last.
     groups: dict[str, list[Todo]] = {}
     for t in items:
         groups.setdefault(t.project or "", []).append(t)
-    for name in sorted(groups, key=lambda n: (n == "", n)):
+    def median_priority(name: str) -> float:
+        return statistics.median(t.priority or 4 for t in groups[name])
+
+    for name in sorted(groups, key=lambda n: (n == "", median_priority(n), n)):
         print(f"{'+' + name if name else '(no project)'}")
         for t in groups[name]:
             print("  " + format_todo(t, today, under=name))
@@ -335,8 +345,8 @@ def build_parser() -> argparse.ArgumentParser:
     todo = sub.add_parser("todo", aliases=["t"], help="manage the todo list")
     tsub = todo.add_subparsers(dest="todo_command", required=True)
 
-    p = tsub.add_parser("add", aliases=["a"], help="add a todo")
-    p.add_argument("text", nargs="*", help="omit to be prompted (no shell quoting needed)")
+    p = tsub.add_parser("add", aliases=["a"], help="add a todo: give flags here, then type the text at the prompt")
+    p.add_argument("text", nargs="*", help=argparse.SUPPRESS)  # rejected: text is always typed at the prompt
     p.add_argument("-p", "--project")
     p.add_argument("--pri", dest="priority", type=priority_arg, help="1 (high) .. 3 (low)")
     p.add_argument("--due", type=day_arg, help="YYYY-MM-DD, today, tomorrow")
@@ -415,7 +425,12 @@ def main(argv: list[str] | None = None) -> None:
     if argv[:1] == ["_complete"]:  # hidden helper used by the completion script
         print("\n".join(completion.complete(argv[1] if len(argv) > 1 else "")))
         return
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args, extra = parser.parse_known_args(argv)
+    if extra:
+        if args.func is not cmd_todo_add:
+            parser.error(f"unrecognized arguments: {' '.join(extra)}")
+        args.text += extra  # rejected by cmd_todo_add with a pointer to the prompt
     args.func(args)
 
 

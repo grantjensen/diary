@@ -44,8 +44,7 @@ _diary_todo() {
           _arguments \
             '(-p --project)'{-p,--project}'[project]:project:_diary_projects' \
             '--pri[priority]:priority:(1 2 3)' \
-            '--due[due date]:date:(today tomorrow)' \
-            '*:text: ' ;;
+            '--due[due date]:date:(today tomorrow)' ;;
         ls|list)
           _arguments \
             '(-p --project)'{-p,--project}'[project]:project:_diary_projects' \
