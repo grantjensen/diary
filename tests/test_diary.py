@@ -172,6 +172,24 @@ class DateTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             store.parse_day("someday", today)
 
+    def test_parse_day_future_for_due_dates(self):
+        thu = date(2026, 10, 29)  # a Thursday
+        self.assertEqual(store.parse_day("3d", thu, future=True), date(2026, 11, 1))
+        self.assertEqual(store.parse_day("2w", thu, future=True), date(2026, 11, 12))
+        self.assertEqual(store.parse_day("-3d", thu, future=True), date(2026, 10, 26))
+        self.assertEqual(store.parse_day("+3d", thu), date(2026, 11, 1))
+        self.assertEqual(store.parse_day("fri", thu, future=True), date(2026, 10, 30))
+        self.assertEqual(store.parse_day("thu", thu, future=True), date(2026, 11, 5))  # next week, not today
+        self.assertEqual(store.parse_day("Monday", thu, future=True), date(2026, 11, 2))
+
+    def test_parse_day_weekdays_look_back_by_default(self):
+        thu = date(2026, 10, 29)
+        self.assertEqual(store.parse_day("mon", thu), date(2026, 10, 26))
+        self.assertEqual(store.parse_day("thu", thu), thu)  # today counts
+        self.assertEqual(store.parse_day("fri", thu), date(2026, 10, 23))
+        with self.assertRaises(ValueError):
+            store.parse_day("fr", thu)  # too short to be unambiguous
+
 
 if __name__ == "__main__":
     unittest.main()

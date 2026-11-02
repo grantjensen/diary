@@ -42,6 +42,8 @@ diary todo edit 3 --pri none -p web --due 2026-11-05 [new text]
 diary todo undo 3 | rm 3 | open
 ```
 
+`--due` accepts `YYYY-MM-DD`, `today`, `tomorrow`, a weekday (`fri` or `friday` means the next one, never today), or an offset ahead like `3d`, `2w` or `1m`.
+
 `diary todo add` takes only flags; the todo text is always typed at the `todo: ` prompt. That way nothing you type is mistaken for a flag or mangled by the shell (`>`, `|`, `&`, `#` and `*` are all fine). `diary todo edit 3` with no text or flags opens the current text in `$EDITOR`.
 
 In `todos.md`, each todo is one line with inline tokens: `+project`, `!p1`..`!p3`, and `due:YYYY-MM-DD`. Lines you add by hand get an id on the next save.

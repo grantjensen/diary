@@ -32,11 +32,15 @@ def open_in_editor(path, insert_at_line: int | None = None) -> None:
     subprocess.call([*cmd, str(path)])
 
 
-def day_arg(text: str) -> date:
+def day_arg(text: str, future: bool = False) -> date:
     try:
-        return store.parse_day(text)
+        return store.parse_day(text, future=future)
     except ValueError as e:
         raise argparse.ArgumentTypeError(str(e))
+
+
+def due_arg(text: str) -> date:
+    return day_arg(text, future=True)
 
 
 def priority_arg(text: str) -> int:
@@ -349,7 +353,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("text", nargs="*", help=argparse.SUPPRESS)  # rejected: text is always typed at the prompt
     p.add_argument("-p", "--project")
     p.add_argument("--pri", dest="priority", type=priority_arg, help="1 (high) .. 3 (low)")
-    p.add_argument("--due", type=day_arg, help="YYYY-MM-DD, today, tomorrow")
+    p.add_argument("--due", type=due_arg, help="YYYY-MM-DD, today, tomorrow, fri, 3d, 2w")
     p.set_defaults(func=cmd_todo_add)
 
     p = tsub.add_parser("ls", aliases=["list"], help="list todos (global by default)")
@@ -374,7 +378,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--pri", dest="priority", type=lambda s: 0 if s == "none" else priority_arg(s),
                    help="1..3, or 'none' to clear")
     g = p.add_mutually_exclusive_group()
-    g.add_argument("--due", type=day_arg)
+    g.add_argument("--due", type=due_arg, help="YYYY-MM-DD, today, tomorrow, fri, 3d, 2w")
     g.add_argument("--no-due", dest="clear_due", action="store_true")
     p.set_defaults(func=cmd_todo_edit)
 

@@ -44,7 +44,7 @@ _diary_todo() {
           _arguments \
             '(-p --project)'{-p,--project}'[project]:project:_diary_projects' \
             '--pri[priority]:priority:(1 2 3)' \
-            '--due[due date]:date:(today tomorrow)' ;;
+            '--due[due date]:date:(today tomorrow mon tue wed thu fri sat sun)' ;;
         ls|list)
           _arguments \
             '(-p --project)'{-p,--project}'[project]:project:_diary_projects' \
@@ -57,7 +57,7 @@ _diary_todo() {
             '1:todo:_diary_todos all' \
             '(-p --project)'{-p,--project}'[project]:project:_diary_projects' \
             '--pri[priority]:priority:(1 2 3 none)' \
-            '(--no-due)--due[due date]:date:(today tomorrow)' \
+            '(--no-due)--due[due date]:date:(today tomorrow mon tue wed thu fri sat sun)' \
             '(--due)--no-due[clear due date]' \
             '*:text: ' ;;
       esac ;;
