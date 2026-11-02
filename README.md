@@ -85,6 +85,10 @@ diary ask --since 30d -p api "why did I change the token refresh?"
 
 This sends your todos and the selected logs to `claude -p --model claude-opus-5-5` with tools disabled. Set `$DIARY_MODEL` or pass `--model` to use a different model.
 
+## Colour
+
+Output is coloured when printing to a terminal and plain when piped. Project names are coral; p1 and overdue items are red, p2 and items due today yellow, and closed projects and done todos dimmed. Set `DIARY_COLOR=always` or `never` (or `NO_COLOR`) to override.
+
 ## Development
 
 ```sh

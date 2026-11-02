@@ -14,7 +14,7 @@ from datetime import date
 from pathlib import Path
 
 from . import ask as ask_mod
-from . import completion
+from . import color, completion
 from . import logs, projects, store
 from .todos import Todo, TodoList
 
@@ -52,18 +52,22 @@ def priority_arg(text: str) -> int:
 
 def format_todo(t: Todo, today: date, under: str | None = None) -> str:
     """One display line; `under` is the project heading it's listed beneath, so its tag is omitted."""
-    box = "[x]" if t.is_done else "[ ]"
-    bits = [f"{box} #{t.id:<3}"]
-    bits.append(f"p{t.priority}" if t.priority else "  ")
-    bits.append(t.text)
+    box = color.paint("[x]", "green") if t.is_done else "[ ]"
+    bits = [f"{box} {color.paint(f'#{t.id:<3}', 'dim')}"]
+    bits.append(color.priority(t.priority))
+    bits.append(color.paint(t.text, "dim") if t.is_done else t.text)
     tags = [p for p in (t.project, *t.extra_projects) if p and p != under]
     if tags:
-        bits.append(" ".join(f"+{p}" for p in tags))
+        bits.append(" ".join("+" + color.project(p) for p in tags))
     if t.due and not t.is_done:
-        flag = " OVERDUE" if t.due < today else " TODAY" if t.due == today else ""
-        bits.append(f"(due {t.due.isoformat()}{flag})")
+        if t.due < today:
+            bits.append(color.paint(f"(due {t.due.isoformat()} OVERDUE)", "red", "bold"))
+        elif t.due == today:
+            bits.append(color.paint(f"(due {t.due.isoformat()} TODAY)", "yellow", "bold"))
+        else:
+            bits.append(color.paint(f"(due {t.due.isoformat()})", "dim"))
     if t.is_done and t.done != date.min:
-        bits.append(f"(done {t.done.isoformat()})")
+        bits.append(color.paint(f"(done {t.done.isoformat()})", "dim"))
     return " ".join(bits)
 
 
@@ -139,7 +143,7 @@ def cmd_todo_ls(args) -> None:
         return statistics.median(t.priority or 4 for t in groups[name])
 
     for name in sorted(groups, key=lambda n: (n == "", median_priority(n), n)):
-        print(f"{'+' + name if name else '(no project)'}")
+        print("+" + color.project(name, bold=True) if name else color.paint("(no project)", "bold"))
         for t in groups[name]:
             print("  " + format_todo(t, today, under=name))
 
@@ -220,7 +224,8 @@ def cmd_log(args) -> None:
     log = logs.DayLog(args.date)
     if args.message:
         log.append(" ".join(args.message), project=args.project)
-        print(f"logged to {args.date.isoformat()} under {args.project or logs.NOTES}")
+        where = color.project(args.project.lower(), bold=True) if args.project else color.paint(logs.NOTES, "bold")
+        print(f"logged to {color.paint(args.date.isoformat(), 'bold')} under {where}")
         return
     log.ensure()
     if args.date == date.today():
@@ -237,7 +242,7 @@ def cmd_show(args) -> None:
         if log.exists:
             if shown:
                 print()
-            print(log.for_context().rstrip())
+            print(color.log_text(log.for_context().rstrip(), logs.RESERVED))
             shown = True
     if not shown:
         print("no log entries")
@@ -275,9 +280,20 @@ def cmd_projects(args) -> None:
     ]
     widths = [max(len(r[i]) for r in table) for i in range(len(headers))]
     for i, r in enumerate(table):
-        print("  ".join(c.ljust(w) if j < 2 else c.rjust(w) for j, (c, w) in enumerate(zip(r, widths))))
+        cells = [c.ljust(w) if j < 2 else c.rjust(w) for j, (c, w) in enumerate(zip(r, widths))]
         if i == 0:
-            print("  ".join("-" * w for w in widths))
+            print(color.paint("  ".join(cells), "bold"))
+            print(color.paint("  ".join("-" * w for w in widths), "dim"))
+            continue
+        p = rows[i - 1]
+        if p.is_open:
+            cells[0] = color.project(p.name, bold=True) + cells[0][len(p.name):]
+            cells[1] = color.paint(cells[1], "green")
+            if p.open_todos:
+                cells[5] = color.paint(cells[5], "yellow")
+            print("  ".join(cells))
+        else:
+            print(color.paint("  ".join(cells), "dim"))
 
 
 def _project_action(action: str, name: str) -> None:
@@ -314,16 +330,16 @@ def _d(d: date | None) -> str:
 
 
 def _print_project(p: projects.ProjectHistory) -> None:
-    status = "" if p.is_open else f" [closed{' ' + _d(p.closed) if p.closed != date.min else ''}]"
-    print(f"+{p.name}{status}: {len(p.days)} day(s) logged, {_d(p.first)} .. {_d(p.last)}; "
-          f"{p.open_todos} open / {p.done_todos} done todo(s)")
+    status = "" if p.is_open else color.paint(
+        f" [closed{' ' + _d(p.closed) if p.closed != date.min else ''}]", "dim")
+    print(f"+{color.project(p.name, bold=True)}{status}: {len(p.days)} day(s) logged, "
+          f"{_d(p.first)} .. {_d(p.last)}; {p.open_todos} open / {p.done_todos} done todo(s)")
     for d in sorted(p.days):
-        print(f"\n{d.isoformat()} ({d.strftime('%a')})")
-        for line in p.days[d].splitlines():
-            print(f"  {line}")
+        print("\n" + color.paint(f"{d.isoformat()} ({d.strftime('%a')})", "bold"))
+        print(color.log_text("\n".join(f"  {line}" for line in p.days[d].splitlines()), logs.RESERVED))
     open_items = TodoList().query(project=p.name)
     if open_items:
-        print("\nopen todos")
+        print("\n" + color.paint("open todos", "bold"))
         today = date.today()
         for t in open_items:
             print("  " + format_todo(t, today, under=p.name))
