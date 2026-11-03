@@ -15,7 +15,8 @@ INSTRUCTIONS = """\
 You are answering questions about the user's personal developer diary.
 Below are their todo list and daily log entries. In each daily log, a `## <name>` heading
 is a project worked on that day; `## Notes` is general notes. Todo tokens: +project,
-!p1 (high) .. !p3 (low) priority, due:/created:/done: dates.
+!p1 (high) .. !p3 (low) priority, due:/created:/done: dates. `[x]` is done; `[-]` with
+deprecated:<date> means the todo was dropped as no longer relevant (not completed).
 
 Answer the question using only this diary. Cite dates (and todo ids like #12) for the
 facts you use. If the diary doesn't contain the answer, say so plainly.

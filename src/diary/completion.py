@@ -34,7 +34,7 @@ _diary_todo() {
     sub)
       local -a subs=(
         'add:add a todo' 'ls:list todos' 'done:mark todos done'
-        'undo:reopen a completed todo' 'edit:change a todo' 'rm:delete a todo'
+        'deprecate:mark todos no longer relevant' 'undo:reopen a done or deprecated todo' 'edit:change a todo' 'rm:delete a todo'
         'open:edit todos.md in $EDITOR'
       )
       _describe -t commands 'todo command' subs ;;
@@ -48,8 +48,10 @@ _diary_todo() {
         ls|list)
           _arguments \
             '(-p --project)'{-p,--project}'[project]:project:_diary_projects' \
-            '(--all)--done[only completed]' '(--done)--all[open and completed]' ;;
-        done|d) _arguments '*:todo:_diary_todos open' ;;
+            '(--all --deprecated)--done[only completed]' \
+            '(--all --done)--deprecated[only deprecated]' \
+            '(--done --deprecated)--all[open, completed and deprecated]' ;;
+        done|d|deprecate|dep) _arguments '*:todo:_diary_todos open' ;;
         undo)   _arguments '1:todo:_diary_todos done' ;;
         rm)     _arguments '1:todo:_diary_todos all' ;;
         edit|e)
@@ -122,6 +124,8 @@ def complete(kind: str) -> list[str]:
         return [_escape(name) for name in projects.known_names(status)]
     if kind in {"todos-open", "todos-done", "todos-all"}:
         which = kind.removeprefix("todos-")
-        items = TodoList().query(include_open=which != "done", include_done=which != "open")
+        # "done" = anything `undo` can reopen: completed or deprecated
+        items = TodoList().query(include_open=which != "done", include_done=which != "open",
+                                 include_deprecated=which != "open")
         return [f"{t.id}:{t.text}" + (f" +{t.project}" if t.project else "") for t in items]
     return []

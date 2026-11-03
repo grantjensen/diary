@@ -1,6 +1,9 @@
 import os
 import tempfile
+import contextlib
+import io
 import unittest
+from unittest import mock
 from datetime import date, datetime
 from pathlib import Path
 
@@ -52,6 +55,105 @@ class TodoTests(DiaryTestCase):
         self.assertEqual(len(tl.query()), 3)
         tl.get(1).done = date(2026, 10, 29)
         self.assertEqual([t.text for t in tl.query(include_open=False, include_done=True)], ["low"])
+
+
+class DeprecatedTodoTests(DiaryTestCase):
+    def test_deprecated_roundtrip_and_queries(self):
+        tl = TodoList()
+        tl.add("keep", project="api")
+        tl.add("drop", project="api").deprecated = date(2026, 11, 3)
+        tl.add("finished", project="api").done = date(2026, 11, 2)
+        tl.save()
+        text = store.todos_path().read_text()
+        self.assertIn("## Deprecated\n\n- [-] (#2) drop +api", text)
+        self.assertIn("deprecated:2026-11-03", text)
+
+        tl = TodoList()
+        self.assertTrue(tl.get(2).is_deprecated)
+        self.assertFalse(tl.get(2).is_open)
+        self.assertEqual([t.text for t in tl.query()], ["keep"])
+        self.assertEqual([t.text for t in tl.query(include_open=False, include_deprecated=True)], ["drop"])
+        self.assertEqual(len(tl.query(include_done=True, include_deprecated=True)), 3)
+
+        hist = projects.collect()["api"]
+        self.assertEqual((hist.open_todos, hist.done_todos), (1, 1))  # deprecated counts as neither
+
+    def test_hand_written_dash_box_is_deprecated(self):
+        store.todos_path().write_text("- [-] (#1) old idea\n")
+        t = TodoList().get(1)
+        self.assertTrue(t.is_deprecated)
+        self.assertEqual(t.render(), "- [-] (#1) old idea")
+
+
+class TodoAddPromptTests(DiaryTestCase):
+    def run_add(self, answers, argv=("todo", "add")):
+        from diary import cli
+        with mock.patch("builtins.input", side_effect=list(answers)), \
+                contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            cli.main(list(argv))
+        return TodoList().items[-1]
+
+    def test_prompts_for_each_field(self):
+        projects.set_status("api", None)
+        t = self.run_add(["Fix a -> b | c", "api", "7", "2", "nope", "2026-12-01"])
+        self.assertEqual((t.text, t.project, t.priority, t.due), ("Fix a -> b | c", "api", 2, date(2026, 12, 1)))
+
+    def test_enter_skips_and_new_project_needs_confirmation(self):
+        projects.set_status("api", None)
+        t = self.run_add(["thing", "apo", "", "", "", ""])  # typo declined, then project skipped
+        self.assertEqual((t.project, t.priority, t.due), (None, None, None))
+        t = self.run_add(["other", "web", "y", "", ""])
+        self.assertEqual(t.project, "web")
+
+    def test_flags_skip_their_prompts(self):
+        t = self.run_add(["flagged", ""], argv=("todo", "add", "-p", "api", "--pri", "1"))  # only text + due asked
+        self.assertEqual((t.project, t.priority, t.due), ("api", 1, None))
+
+
+class TodoEditPromptTests(DiaryTestCase):
+    run_add = TodoAddPromptTests.run_add
+
+    def edit(self, answers, todo_id=1):
+        from diary import cli
+        with mock.patch("builtins.input", side_effect=list(answers)), \
+                contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            cli.main(["todo", "edit", str(todo_id)])
+        return TodoList().get(todo_id)
+
+    def test_enter_keeps_dash_clears(self):
+        projects.set_status("api", None)
+        self.run_add(["original", "api", "2", "2026-12-01"])
+        t = self.edit(["", "-", "1", ""])  # keep text, clear project, p1, keep due
+        self.assertEqual((t.text, t.project, t.priority, t.due), ("original", None, 1, date(2026, 12, 1)))
+        t = self.edit(["new text -> here", "", "-", "-"])
+        self.assertEqual((t.text, t.project, t.priority, t.due), ("new text -> here", None, None, None))
+
+
+class ClosedProjectReopenTests(DiaryTestCase):
+    run_add = TodoAddPromptTests.run_add
+
+    def test_open_todo_reopens_closed_project(self):
+        from diary import cli
+        projects.set_status("api", None)
+        t = self.run_add(["task", "api", "", ""])
+        with self.assertRaises(SystemExit):  # can't close with an open todo
+            cli.main(["projects", "close", "api"])
+        self.assertEqual(projects.known_names("closed"), [])
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            cli.main(["todo", "done", str(t.id)])
+            cli.main(["projects", "close", "api"])
+        self.assertEqual(projects.known_names("closed"), ["api"])
+
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            cli.main(["todo", "undo", str(t.id)])  # reopening the todo reopens the project
+        self.assertEqual(projects.known_names("closed"), [])
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            cli.main(["todo", "done", str(t.id)])
+            cli.main(["projects", "close", "api"])
+        self.run_add(["another", "api", "", ""])  # adding to a closed project reopens it too
+        self.assertEqual(projects.known_names("open"), ["api"])
 
 
 class LogTests(DiaryTestCase):

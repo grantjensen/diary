@@ -96,7 +96,7 @@ def collect(since: date | None = None, until: date | None = None,
         for name in filter(None, [t.project, *t.extra_projects]):
             if t.is_done:
                 get(name).done_todos += 1
-            else:
+            elif t.is_open:
                 get(name).open_todos += 1
     return projects
 
@@ -111,6 +111,19 @@ def set_status(name: str, closed: date | None) -> None:
     registry = Registry()
     registry.entries[name.lower()] = closed
     registry.save()
+
+
+def reopen_with_open_todos(todo_list: TodoList) -> list[str]:
+    """Reopen any closed project that has an open todo; returns the names reopened."""
+    registry = Registry()
+    names = sorted({name for t in todo_list.items if t.is_open
+                    for name in filter(None, [t.project, *t.extra_projects])
+                    if registry.closed(name) is not None})
+    for name in names:
+        registry.entries[name] = None
+    if names:
+        registry.save()
+    return names
 
 
 def new_project_warning(name: str | None) -> str | None:

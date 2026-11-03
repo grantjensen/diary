@@ -33,18 +33,20 @@ data/
 ## Todos
 
 ```sh
-diary todo add -p api --pri 1 --due tomorrow   # then type the text at the "todo: " prompt
+diary todo add                 # asks for text, project, priority, due date; Enter skips one
 diary todo ls                  # global list, grouped by project
 diary todo ls -p api           # one project
 diary todo ls --done | --all
 diary todo done 3 4            # also appends "done #3: ..." to today's log under that project
 diary todo edit 3 --pri none -p web --due 2026-11-05 [new text]
+diary todo deprecate 3         # no longer relevant: hidden from the list, logged as "deprecated #3: ..."
+diary todo ls --deprecated     # see them again (--all shows open, done and deprecated)
 diary todo undo 3 | rm 3 | open
 ```
 
 `--due` accepts `YYYY-MM-DD`, `today`, `tomorrow`, a weekday (`fri` or `friday` means the next one, never today), or an offset ahead like `3d`, `2w` or `1m`.
 
-`diary todo add` takes only flags; the todo text is always typed at the `todo: ` prompt. That way nothing you type is mistaken for a flag or mangled by the shell (`>`, `|`, `&`, `#` and `*` are all fine). `diary todo edit 3` with no text or flags opens the current text in `$EDITOR`.
+`diary todo add` asks for each field in turn: the text, then project (Tab completes open projects; a new name asks for confirmation, to catch typos), priority (1-3) and due date. Press Enter to skip any but the text; invalid answers are asked again. Typed answers never go through the shell, so `>`, `|`, `&`, `#` and `*` are all fine. Flags (`-p`, `--pri`, `--due`) still work as shortcuts that skip their question. `diary todo edit 3` with no text or flags asks the same questions, showing each current value: Enter keeps it, `-` clears it, and at the text question `e` opens the text in `$EDITOR` to fix it in place. Giving flags or text (`diary todo edit 3 --pri 1`) changes just those, without asking.
 
 In `todos.md`, each todo is one line with inline tokens: `+project`, `!p1`..`!p3`, and `due:YYYY-MM-DD`. Lines you add by hand get an id on the next save.
 
@@ -68,11 +70,11 @@ diary projects             # each project: status, days worked, first/last date,
 diary projects api         # every day's entries for api, plus its open todos
 diary projects --since 3m
 diary projects add web     # create a project before using it
-diary projects close api   # finished: no more auto headings, hidden from -p completion
+diary projects close api   # finished: no more auto headings, hidden from -p completion (needs no open todos)
 diary projects reopen api
 ```
 
-A project also gets created the first time you use it with `-p`. Every project is open until you close it, and its history stays after closing. Open/closed status is kept in `data/projects.md`, which you can hand-edit; deleting a line there removes a project that has no logs or todos (such as a typo).
+A project also gets created the first time you use it with `-p`. A closed project is reopened automatically when it gets an open todo (added, moved into it, or reopened with `undo`). Every project is open until you close it, and its history stays after closing. Open/closed status is kept in `data/projects.md`, which you can hand-edit; deleting a line there removes a project that has no logs or todos (such as a typo).
 
 When `diary log` opens a day in your editor, it adds an empty `## <project>` heading for every open project, so you can start writing straight away. Headings left empty don't count as working on that project.
 

@@ -52,14 +52,16 @@ def priority_arg(text: str) -> int:
 
 def format_todo(t: Todo, today: date, under: str | None = None) -> str:
     """One display line; `under` is the project heading it's listed beneath, so its tag is omitted."""
-    box = color.paint("[x]", "green") if t.is_done else "[ ]"
+    box = (color.paint("[x]", "green") if t.is_done
+           else color.paint("[-]", "dim") if t.is_deprecated else "[ ]")
     bits = [f"{box} {color.paint(f'#{t.id:<3}', 'dim')}"]
     bits.append(color.priority(t.priority))
-    bits.append(color.paint(t.text, "dim") if t.is_done else t.text)
+    bits.append(color.paint(t.text, "dim") if t.is_done
+                else color.paint(t.text, "dim", "9") if t.is_deprecated else t.text)  # 9 = strikethrough
     tags = [p for p in (t.project, *t.extra_projects) if p and p != under]
     if tags:
         bits.append(" ".join("+" + color.project(p) for p in tags))
-    if t.due and not t.is_done:
+    if t.due and t.is_open:
         if t.due < today:
             bits.append(color.paint(f"(due {t.due.isoformat()} OVERDUE)", "red", "bold"))
         elif t.due == today:
@@ -68,28 +70,52 @@ def format_todo(t: Todo, today: date, under: str | None = None) -> str:
             bits.append(color.paint(f"(due {t.due.isoformat()})", "dim"))
     if t.is_done and t.done != date.min:
         bits.append(color.paint(f"(done {t.done.isoformat()})", "dim"))
+    if t.is_deprecated:
+        when = f" {t.deprecated.isoformat()}" if t.deprecated != date.min else ""
+        bits.append(color.paint(f"(deprecated{when})", "dim"))
     return " ".join(bits)
 
 
 # --- todo ---------------------------------------------------------------
 
-def warn_if_new_project(name: str | None) -> None:
+def warn_if_new_project(name: str | None, for_todo: bool = False) -> None:
     warning = projects.new_project_warning(name)
-    if warning:
+    if warning and not (for_todo and "is closed" in warning):  # an open todo reopens it anyway
         print(warning, file=sys.stderr)
+
+
+def _readline(completions: list[str] | None = None):
+    """Set up line editing for input(), with Tab completing from `completions` (if given)."""
+    try:
+        import readline
+    except ImportError:
+        return None
+    if getattr(readline, "backend", "") == "editline" or "libedit" in (readline.__doc__ or ""):
+        readline.parse_and_bind("bind ^I rl_complete")
+    else:
+        readline.parse_and_bind("tab: complete")
+    readline.set_completer_delims(" ")
+    options = completions or []
+    readline.set_completer(lambda text, i: ([o for o in options if o.startswith(text)] + [None])[i])
+    return readline
+
+
+def ask(label: str, completions: list[str] | None = None) -> str | None:
+    """One line of input; returns None on Enter (or end of piped input). Ctrl-C cancels."""
+    _readline(completions)
+    try:
+        return input(f"{label}: ").strip() or None
+    except EOFError:
+        print()
+        return None
+    except KeyboardInterrupt:
+        print()
+        sys.exit("cancelled")
 
 
 def prompt_text(label: str) -> str:
     """Read free text interactively, so shell characters like > | & # need no quoting."""
-    try:
-        import readline  # noqa: F401  (line editing for input())
-    except ImportError:
-        pass
-    try:
-        text = input(f"{label}: ").strip()
-    except (EOFError, KeyboardInterrupt):
-        print()
-        sys.exit("cancelled")
+    text = ask(label)
     if not text:
         sys.exit("nothing entered")
     return text
@@ -109,6 +135,83 @@ def edit_text_in_editor(text: str) -> str:
     return edited
 
 
+_UNSET = object()  # "no current value": the field is being asked for a new todo
+CLEAR = {"-", "none"}
+
+
+def _label(name: str, hint: str, current) -> str:
+    """'name (hint)' when adding; 'name [current] (hint)' when editing."""
+    if current is _UNSET:
+        return f"{name}{f' ({hint})' if hint else ''}"
+    shown = current.isoformat() if isinstance(current, date) else current
+    return f"{name} [{shown if shown not in (None, '') else 'none'}] ({hint + '; ' if hint else ''}Enter keeps, - clears)"
+
+
+def ask_text(current: str) -> str:
+    """Edit a todo's text: Enter keeps it, `e` opens it in $EDITOR, anything else replaces it."""
+    value = ask(f"text [{current}] (Enter keeps, e edits in $EDITOR)")
+    if not value:
+        return current
+    return edit_text_in_editor(current) if value == "e" else value
+
+
+def ask_project(current=_UNSET) -> str | None:
+    open_names = projects.known_names("open")
+    label = _label("project", f"{', '.join(open_names)}; Tab completes" if open_names else "", current)
+    while True:
+        name = ask(label, completions=open_names)
+        if not name:
+            return None if current is _UNSET else current
+        if name in CLEAR:
+            return None
+        name = name.lstrip("+").lower()
+        if name == current:
+            return name
+        warning = projects.new_project_warning(name)
+        if not warning:
+            return name
+        if "is closed" in warning:
+            return name  # adding/moving an open todo here reopens it
+        what = warning.removeprefix("note: ")  # "new project +x (did you mean +y?)"
+        if (ask(f"create {what} [y/N]") or "").lower() in {"y", "yes"}:
+            return name
+
+
+def ask_priority(current=_UNSET) -> int | None:
+    label = _label("priority", "1-3", f"p{current}" if current not in (_UNSET, None) else current)
+    while True:
+        value = ask(label)
+        if not value:
+            return None if current is _UNSET else current
+        if value in CLEAR:
+            return None
+        try:
+            return priority_arg(value)
+        except argparse.ArgumentTypeError as e:
+            print(f"  {e}", file=sys.stderr)
+
+
+def ask_due(current=_UNSET) -> date | None:
+    label = _label("due", "fri, 3d, YYYY-MM-DD", current)
+    while True:
+        value = ask(label)
+        if not value:
+            return None if current is _UNSET else current
+        if value in CLEAR:
+            return None
+        try:
+            return store.parse_day(value, future=True)
+        except ValueError as e:
+            print(f"  {e}", file=sys.stderr)
+
+
+def save_todos(tl: TodoList) -> None:
+    """Save the todo list; a closed project that now has an open todo is reopened."""
+    tl.save()
+    for name in projects.reopen_with_open_todos(tl):
+        print(f"reopened +{color.project(name)} (it has open todos)", file=sys.stderr)
+
+
 def cmd_todo_add(args) -> None:
     if args.text:
         cmd = "diary todo add"
@@ -116,17 +219,22 @@ def cmd_todo_add(args) -> None:
         cmd += f" --pri {args.priority}" if args.priority else ""
         cmd += f" --due {args.due.isoformat()}" if args.due else ""
         sys.exit(f"todo text goes at the prompt, not the command line: run `{cmd}` and type it there")
-    warn_if_new_project(args.project)
+    warn_if_new_project(args.project, for_todo=True)
+    # Ask for each field not already given as a flag; Enter skips it.
     text = prompt_text("todo")
+    project = args.project or ask_project()
+    priority = args.priority or ask_priority()
+    due = args.due or ask_due()
     tl = TodoList()
-    t = tl.add(text, project=args.project, priority=args.priority, due=args.due)
-    tl.save()
+    t = tl.add(text, project=project, priority=priority, due=due)
+    save_todos(tl)
     print(f"added {format_todo(t, date.today())}")
 
 
 def cmd_todo_ls(args) -> None:
     tl = TodoList()
-    items = tl.query(project=args.project, include_open=not args.done, include_done=args.done or args.all)
+    items = tl.query(project=args.project, include_open=not (args.done or args.deprecated),
+                     include_done=args.done or args.all, include_deprecated=args.deprecated or args.all)
     today = date.today()
     if not items:
         print("no todos" + (f" for +{args.project}" if args.project else ""))
@@ -161,35 +269,64 @@ def cmd_todo_done(args) -> None:
         if t.is_done:
             print(f"#{t.id} already done")
             continue
-        t.done = today
+        t.done, t.deprecated = today, None
         log.append(f"done #{t.id}: {t.text}", project=t.project)
         print(f"done {format_todo(t, today)}")
-    tl.save()
+    save_todos(tl)
+
+
+def cmd_todo_deprecate(args) -> None:
+    tl = TodoList()
+    today = date.today()
+    log = logs.DayLog(today)
+    for todo_id in args.ids:
+        try:
+            t = tl.get(todo_id)
+        except KeyError as e:
+            print(e.args[0], file=sys.stderr)
+            continue
+        if not t.is_open:
+            print(f"#{t.id} is already {'done' if t.is_done else 'deprecated'}")
+            continue
+        t.deprecated = today
+        log.append(f"deprecated #{t.id}: {t.text}", project=t.project)
+        print(f"deprecated {format_todo(t, today)}")
+    save_todos(tl)
 
 
 def cmd_todo_undo(args) -> None:
     tl = TodoList()
     t = tl.get(args.id)
-    t.done = None
-    tl.save()
+    t.done = t.deprecated = None
+    save_todos(tl)
     print(f"reopened {format_todo(t, date.today())}")
 
 
 def cmd_todo_edit(args) -> None:
     no_flags = args.project is None and args.priority is None and not args.due and not args.clear_due
-    if args.text:
-        new_text = " ".join(args.text)
-    elif no_flags:
-        new_text = edit_text_in_editor(TodoList().get(args.id).text)
-    else:
-        new_text = None
-    tl = TodoList()  # (re)load after the editor closes, so changes made meanwhile aren't lost
+    if no_flags and not args.text:
+        # Interactive: ask for each field, showing the current value (Enter keeps it).
+        try:
+            current = TodoList().get(args.id)
+        except KeyError as e:
+            sys.exit(e.args[0])
+        print(f"editing {format_todo(current, date.today())}")
+        changes = {"text": ask_text(current.text), "project": ask_project(current.project),
+                   "priority": ask_priority(current.priority), "due": ask_due(current.due)}
+        tl = TodoList()  # reload after prompting/editing, so changes made meanwhile aren't lost
+        t = tl.get(args.id)
+        for field, value in changes.items():
+            setattr(t, field, value)
+        save_todos(tl)
+        print(f"updated {format_todo(t, date.today())}")
+        return
+    tl = TodoList()
     t = tl.get(args.id)
-    if new_text:
-        t.text = new_text
+    if args.text:
+        t.text = " ".join(args.text)
     if args.project is not None:
         if args.project not in {"", "-", "none"}:
-            warn_if_new_project(args.project)
+            warn_if_new_project(args.project, for_todo=True)
         t.project = None if args.project in {"", "-", "none"} else args.project.lower()
     if args.priority is not None:
         t.priority = None if args.priority == 0 else args.priority
@@ -197,24 +334,24 @@ def cmd_todo_edit(args) -> None:
         t.due = None
     elif args.due:
         t.due = args.due
-    tl.save()
+    save_todos(tl)
     print(f"updated {format_todo(t, date.today())}")
 
 
 def cmd_todo_rm(args) -> None:
     tl = TodoList()
     t = tl.remove(args.id)
-    tl.save()
+    save_todos(tl)
     print(f"removed #{t.id}: {t.text}")
 
 
 def cmd_todo_open(args) -> None:
     tl = TodoList()
-    tl.save()  # make sure the file exists and ids are assigned
+    save_todos(tl)  # make sure the file exists and ids are assigned
     lines = tl.path.read_text().splitlines()
     last_open = max((i for i, line in enumerate(lines, 1) if line.startswith("- [ ]")), default=None)
     open_in_editor(tl.path, insert_at_line=last_open or len(lines))
-    TodoList().save()  # normalise anything added by hand
+    save_todos(TodoList())  # normalise anything added by hand
 
 
 # --- log ----------------------------------------------------------------
@@ -313,11 +450,11 @@ def _project_action(action: str, name: str) -> None:
     if action == "close":
         if not p.is_open:
             sys.exit(f"+{name} is already closed")
+        if p.open_todos:
+            sys.exit(f"+{name} still has {p.open_todos} open todo(s); finish or deprecate them first "
+                     f"(see `diary todo ls -p {name}`)")
         projects.set_status(name, date.today())
         print(f"closed +{name}")
-        if p.open_todos:
-            print(f"note: +{name} still has {p.open_todos} open todo(s); see `diary todo ls -p {name}`",
-                  file=sys.stderr)
     else:
         if p.is_open:
             sys.exit(f"+{name} is already open")
@@ -365,7 +502,7 @@ def build_parser() -> argparse.ArgumentParser:
     todo = sub.add_parser("todo", aliases=["t"], help="manage the todo list")
     tsub = todo.add_subparsers(dest="todo_command", required=True)
 
-    p = tsub.add_parser("add", aliases=["a"], help="add a todo: give flags here, then type the text at the prompt")
+    p = tsub.add_parser("add", aliases=["a"], help="add a todo: prompts for text, project, priority and due date (Enter skips)")
     p.add_argument("text", nargs="*", help=argparse.SUPPRESS)  # rejected: text is always typed at the prompt
     p.add_argument("-p", "--project")
     p.add_argument("--pri", dest="priority", type=priority_arg, help="1 (high) .. 3 (low)")
@@ -376,20 +513,26 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("-p", "--project")
     g = p.add_mutually_exclusive_group()
     g.add_argument("--done", action="store_true", help="only completed todos")
-    g.add_argument("--all", action="store_true", help="open and completed todos")
+    g.add_argument("--deprecated", action="store_true", help="only deprecated todos")
+    g.add_argument("--all", action="store_true", help="open, completed and deprecated todos")
     p.set_defaults(func=cmd_todo_ls)
 
     p = tsub.add_parser("done", aliases=["d"], help="mark todos done (also logs them to today)")
     p.add_argument("ids", type=int, nargs="+")
     p.set_defaults(func=cmd_todo_done)
 
-    p = tsub.add_parser("undo", help="reopen a completed todo")
+    p = tsub.add_parser("deprecate", aliases=["dep"],
+                        help="mark todos no longer relevant (hidden from the list, logged to today)")
+    p.add_argument("ids", type=int, nargs="+")
+    p.set_defaults(func=cmd_todo_deprecate)
+
+    p = tsub.add_parser("undo", help="reopen a completed or deprecated todo")
     p.add_argument("id", type=int)
     p.set_defaults(func=cmd_todo_undo)
 
     p = tsub.add_parser("edit", aliases=["e"], help="change a todo's text, project, priority or due date")
     p.add_argument("id", type=int)
-    p.add_argument("text", nargs="*", help="new text; with no text or flags, opens the current text in $EDITOR")
+    p.add_argument("text", nargs="*", help="new text; with no text or flags, asks for each field (Enter keeps the current value)")
     p.add_argument("-p", "--project", help="new project ('none' to clear)")
     p.add_argument("--pri", dest="priority", type=lambda s: 0 if s == "none" else priority_arg(s),
                    help="1..3, or 'none' to clear")
