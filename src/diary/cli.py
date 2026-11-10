@@ -15,7 +15,7 @@ from pathlib import Path
 
 from . import ask as ask_mod
 from . import color, completion
-from . import logs, projects, store
+from . import logs, projects, prs, store
 from .todos import Todo, TodoList
 
 
@@ -356,7 +356,28 @@ def cmd_todo_open(args) -> None:
 
 # --- log ----------------------------------------------------------------
 
+def sync_prs(since: date | None = None, force: bool = False) -> None:
+    """Log merged PRs (once a day unless forced); a gh failure only warns, and is retried next time."""
+    try:
+        new = prs.sync(since=since, force=force)
+    except (RuntimeError, OSError, ValueError) as e:
+        print(f"note: couldn't sync merged PRs ({e}); will retry on the next `diary log`", file=sys.stderr)
+        return
+    if new is None:
+        return
+    for pr in new:
+        print(f"logged merged PR {color.paint(pr.key.split('/', 1)[-1], 'green')} "
+              f"to {pr.merged.date().isoformat()}: {pr.title}")
+    if force and not new:
+        print("no new merged PRs")
+
+
+def cmd_prs_sync(args) -> None:
+    sync_prs(since=args.since, force=True)
+
+
 def cmd_log(args) -> None:
+    sync_prs()  # first `diary log` of the day pulls in merged PRs, catching up missed days
     warn_if_new_project(args.project)
     log = logs.DayLog(args.date)
     if args.message:
@@ -553,6 +574,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("-p", "--project", help="project section to log under")
     p.add_argument("-d", "--date", type=day_arg, default=date.today(), help="which day (default today)")
     p.set_defaults(func=cmd_log)
+
+    p = sub.add_parser("prs", help="merged GitHub PRs in the log (synced on the first `diary log` of a day)")
+    psub = p.add_subparsers(dest="prs_command", required=True)
+    p = psub.add_parser("sync", help="log merged PRs now, catching up any days not yet synced")
+    p.add_argument("--since", type=day_arg, help="also re-check PRs merged since this date (e.g. 2w)")
+    p.set_defaults(func=cmd_prs_sync)
 
     p = sub.add_parser("show", help="print a day's log, or a range with --since")
     p.add_argument("date", nargs="?", type=day_arg, default=date.today())

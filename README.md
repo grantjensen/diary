@@ -63,6 +63,19 @@ diary show [date] | diary show --since 7d
 
 Each `## <project>` heading in a day's file means you worked on that project that day, so one day can cover several projects. `## Notes` is for general notes. `## Open todos` is regenerated every time you open today's log and is ignored by reports.
 
+## Merged PRs
+
+The first `diary log` of each day pulls in your merged pull requests from `togethercomputer` repos (via the `gh` CLI) and adds each one to the `## PRs` section of the day it merged, catching up any days since the last sync:
+
+```
+## PRs
+
+- 16:20 merged tiny-engine#345: k3_common.gemm: parse the knob-fix label tokens ab<N>, ec<N>, entrypftw
+  https://github.com/togethercomputer/tiny-engine/pull/345
+```
+
+Each PR is logged once (tracked in `data/prs.json`), even if you delete its line. If `gh` fails, `diary log` still works and the sync is retried next time. `diary prs sync` syncs right away; add `--since 2w` to re-check further back. `## PRs` is not a project, so it doesn't count toward `diary projects`.
+
 ## Projects
 
 ```sh

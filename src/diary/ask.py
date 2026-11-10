@@ -14,7 +14,8 @@ DEFAULT_MODEL = "claude-opus-5-5"
 INSTRUCTIONS = """\
 You are answering questions about the user's personal developer diary.
 Below are their todo list and daily log entries. In each daily log, a `## <name>` heading
-is a project worked on that day; `## Notes` is general notes. Todo tokens: +project,
+is a project worked on that day; `## Notes` is general notes; `## PRs` lists GitHub
+pull requests merged that day. Todo tokens: +project,
 !p1 (high) .. !p3 (low) priority, due:/created:/done: dates. `[x]` is done; `[-]` with
 deprecated:<date> means the todo was dropped as no longer relevant (not completed).
 

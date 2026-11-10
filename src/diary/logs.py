@@ -26,7 +26,8 @@ from .todos import Todo
 
 OPEN_TODOS = "Open todos"
 NOTES = "Notes"
-RESERVED = {OPEN_TODOS.lower(), NOTES.lower()}
+PRS = "PRs"  # merged pull requests, filled in by `diary prs sync`
+RESERVED = {OPEN_TODOS.lower(), NOTES.lower(), PRS.lower()}
 HEADING_RE = re.compile(r"^##\s+(.+?)\s*$")
 COMMENT_RE = re.compile(r"<!--.*?-->", re.S)
 OPEN_TODOS_NOTE = "<!-- auto-generated: refreshed each time you open today's log, ignored by reports -->"
@@ -85,10 +86,11 @@ class DayLog:
         if not self.exists:
             store.write_atomic(self.path, template(self.day))
 
-    def append(self, text: str, project: str | None = None, when: datetime | None = None) -> None:
-        """Append a timestamped bullet under the project's section (or Notes)."""
+    def append(self, text: str, project: str | None = None, when: datetime | None = None,
+               section: str | None = None) -> None:
+        """Append a timestamped bullet under the project's section (or Notes, or an explicit `section`)."""
         self.ensure()
-        heading = project.lower() if project else NOTES
+        heading = section or (project.lower() if project else NOTES)
         stamp = (when or datetime.now()).strftime("%H:%M")
         preamble, sections = split_sections(self.read())
         for name, body in sections:

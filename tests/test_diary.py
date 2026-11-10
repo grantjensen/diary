@@ -7,7 +7,7 @@ from unittest import mock
 from datetime import date, datetime
 from pathlib import Path
 
-from diary import ask, completion, logs, projects, store
+from diary import ask, completion, logs, projects, prs, store
 from diary.todos import Todo, TodoList
 
 
@@ -154,6 +154,46 @@ class ClosedProjectReopenTests(DiaryTestCase):
             cli.main(["projects", "close", "api"])
         self.run_add(["another", "api", "", ""])  # adding to a closed project reopens it too
         self.assertEqual(projects.known_names("open"), ["api"])
+
+
+class PRSyncTests(DiaryTestCase):
+    @staticmethod
+    def pr(n, merged):
+        return prs.MergedPR("togethercomputer/tiny-engine", n, f"title {n}",
+                            f"https://github.com/togethercomputer/tiny-engine/pull/{n}", merged)
+
+    def test_logs_under_merge_day_once_per_day_and_never_twice(self):
+        logs.DayLog(date(2026, 11, 1)).append("first day", project="api")  # diary starts Nov 1
+        available = [self.pr(1, datetime(2026, 11, 2, 9, 30)), self.pr(2, datetime(2026, 11, 4, 16, 20))]
+        asked = []
+
+        def fetch(since):
+            asked.append(since)
+            return [p for p in available if p.merged.date() >= since]
+
+        new = prs.sync(today=date(2026, 11, 4), fetch=fetch)
+        self.assertEqual([p.number for p in new], [1, 2])
+        self.assertEqual(asked, [date(2026, 11, 1)])  # first sync goes back to the first diary day
+        day = logs.DayLog(date(2026, 11, 2)).read()
+        self.assertIn("## PRs\n\n- 09:30 merged tiny-engine#1: title 1\n  https://github.com/", day)
+        self.assertIn("16:20 merged tiny-engine#2", logs.DayLog(date(2026, 11, 4)).read())
+        self.assertNotIn("prs", logs.DayLog(date(2026, 11, 2)).project_sections())  # not a project
+
+        self.assertIsNone(prs.sync(today=date(2026, 11, 4), fetch=fetch))  # already synced today
+        available.append(self.pr(3, datetime(2026, 11, 5, 11, 0)))
+        new = prs.sync(today=date(2026, 11, 6), fetch=fetch)  # skipped Nov 5: caught up
+        self.assertEqual([p.number for p in new], [3])
+        self.assertEqual(asked[-1], date(2026, 11, 4))  # from the last sync day; overlap is deduped
+        self.assertEqual(logs.DayLog(date(2026, 11, 4)).read().count("tiny-engine#2"), 1)
+        self.assertEqual(prs.sync(today=date(2026, 11, 6), force=True, fetch=fetch), [])
+
+    def test_gh_failure_is_retried(self):
+        def broken(since):
+            raise RuntimeError("offline")
+
+        with self.assertRaises(RuntimeError):
+            prs.sync(today=date(2026, 11, 4), fetch=broken)
+        self.assertIsNotNone(prs.sync(today=date(2026, 11, 4), fetch=lambda since: []))  # not marked synced
 
 
 class LogTests(DiaryTestCase):

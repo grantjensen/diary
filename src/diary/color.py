@@ -44,7 +44,7 @@ def priority(p: int | None) -> str:
 
 
 _HEADING_RE = re.compile(r"^(#{1,2})\s+(.*)$")
-_BULLET_TIME_RE = re.compile(r"^(\s*[-*]\s+)(\d{1,2}:\d{2})(\s+)(done #\d+:)?")
+_BULLET_TIME_RE = re.compile(r"^(\s*[-*]\s+)(\d{1,2}:\d{2})(\s+)(done #\d+:|merged [\w.-]+#\d+:)?")
 
 
 def log_text(text: str, reserved: set[str]) -> str:

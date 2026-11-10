@@ -74,6 +74,7 @@ _diary() {
       local -a cmds=(
         'todo:manage the todo list' 'log:append to or open a daily log'
         'show:print a day'"'"'s log' 'projects:summarise projects'
+        'prs:sync merged GitHub PRs into the log'
         'ask:ask Claude about your diary' 'path:print the data directory'
         'completion:print a shell completion script'
       )
@@ -100,6 +101,7 @@ _diary() {
           _arguments \
             '(-p --project)'{-p,--project}'[project]:project:_diary_projects' \
             '--since[from date]:date: ' '--model[model]:model: ' '*:question: ' ;;
+        prs) _arguments '1:action:(sync)' '--since[re-check from date]:date: ' ;;
         completion) _arguments '1:shell:(zsh)' ;;
       esac ;;
   esac
