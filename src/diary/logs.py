@@ -66,6 +66,16 @@ def join_sections(preamble: list[str], sections: list[tuple[str, list[str]]]) ->
     return "\n".join(out) + "\n"
 
 
+def _place_prs(sections: list[tuple[str, list[str]]]) -> list[tuple[str, list[str]]]:
+    """Move the PRs section to just below Open todos (or to the top, above Notes)."""
+    prs = [sec for sec in sections if sec[0].lower() == PRS.lower()]
+    if not prs:
+        return sections
+    rest = [sec for sec in sections if sec[0].lower() != PRS.lower()]
+    at = 1 if rest and rest[0][0].lower() == OPEN_TODOS.lower() else 0
+    return rest[:at] + prs + rest[at:]
+
+
 def _has_content(body: list[str]) -> bool:
     return COMMENT_RE.sub("", "\n".join(body)).strip() != ""
 
@@ -103,7 +113,7 @@ class DayLog:
                 break
         else:
             sections.append((heading, ["", f"- {stamp} {text}"]))
-        store.write_atomic(self.path, join_sections(preamble, sections))
+        store.write_atomic(self.path, join_sections(preamble, _place_prs(sections)))
 
     def refresh_open_todos(self, todos: list[Todo]) -> None:
         """Rewrite the 'Open todos' reference section (kept at the top)."""
@@ -114,7 +124,7 @@ class DayLog:
         body += [f"- {_todo_summary(t)}" for t in todos] or ["- (none)"]
         body.append("")
         sections.insert(0, (OPEN_TODOS, body))
-        store.write_atomic(self.path, join_sections(preamble, sections))
+        store.write_atomic(self.path, join_sections(preamble, _place_prs(sections)))
 
     def ensure_sections(self, names: list[str]) -> None:
         """Add an empty `## name` heading for each project the day doesn't have yet (empty ones aren't counted)."""

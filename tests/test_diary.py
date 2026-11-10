@@ -179,6 +179,7 @@ class PRSyncTests(DiaryTestCase):
         self.assertIn("16:20 merged tiny-engine#2", logs.DayLog(date(2026, 11, 4)).read())
         self.assertNotIn("prs", logs.DayLog(date(2026, 11, 2)).project_sections())  # not a project
 
+
         self.assertIsNone(prs.sync(today=date(2026, 11, 4), fetch=fetch))  # already synced today
         available.append(self.pr(3, datetime(2026, 11, 5, 11, 0)))
         new = prs.sync(today=date(2026, 11, 6), fetch=fetch)  # skipped Nov 5: caught up
@@ -186,6 +187,17 @@ class PRSyncTests(DiaryTestCase):
         self.assertEqual(asked[-1], date(2026, 11, 4))  # from the last sync day; overlap is deduped
         self.assertEqual(logs.DayLog(date(2026, 11, 4)).read().count("tiny-engine#2"), 1)
         self.assertEqual(prs.sync(today=date(2026, 11, 6), force=True, fetch=fetch), [])
+
+    def test_prs_section_sits_between_open_todos_and_notes(self):
+        log = logs.DayLog(date(2026, 11, 4))
+        log.append("note", project="api")
+        log.refresh_open_todos([])
+        log.append("merged x#1: t", section=logs.PRS)
+        headings = [h for h, _ in logs.split_sections(log.read())[1]]
+        self.assertEqual(headings, ["Open todos", "PRs", "Notes", "api"])
+        old_day = logs.DayLog(date(2026, 11, 3))  # no open-todos list on past days
+        old_day.append("merged x#2: t", section=logs.PRS)
+        self.assertEqual([h for h, _ in logs.split_sections(old_day.read())[1]], ["PRs", "Notes"])
 
     def test_gh_failure_is_retried(self):
         def broken(since):
